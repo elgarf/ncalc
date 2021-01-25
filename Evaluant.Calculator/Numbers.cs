@@ -19,8 +19,8 @@ namespace NCalc
             a = ConvertIfString(a);
             b = ConvertIfString(b);
 
-            TypeCode typeCodeA = Type.GetTypeCode(a.GetType());
-            TypeCode typeCodeB = Type.GetTypeCode(b.GetType());
+            TypeCode typeCodeA = Type.GetTypeCode(a?.GetType() ?? null);
+            TypeCode typeCodeB = Type.GetTypeCode(b?.GetType() ?? null);
 
             switch (typeCodeA)
             {
@@ -463,8 +463,8 @@ namespace NCalc
             a = ConvertIfString(a);
             b = ConvertIfString(b);
 
-            TypeCode typeCodeA = Type.GetTypeCode(a.GetType());
-            TypeCode typeCodeB = Type.GetTypeCode(b.GetType());
+            TypeCode typeCodeA = Type.GetTypeCode(a?.GetType() ?? null);
+            TypeCode typeCodeB = Type.GetTypeCode(b?.GetType() ?? null);
 
             switch (typeCodeA)
             {
