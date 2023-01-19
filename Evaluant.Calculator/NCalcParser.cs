@@ -13,7 +13,7 @@ using NCalc.Domain;
 using System;
 
 using Antlr.Runtime;
-using Stack = System.Collections.Generic.Stack<object>;
+//using Stack = System.Collections.Generic.Stack<object>;
 using List = System.Collections.IList;
 using ArrayList = System.Collections.Generic.List<object>;
 
@@ -21,7 +21,7 @@ using ArrayList = System.Collections.Generic.List<object>;
 using Antlr.Runtime.Tree;
 using RewriteRuleITokenStream = Antlr.Runtime.Tree.RewriteRuleTokenStream;
 
-[System.CodeDom.Compiler.GeneratedCode("ANTLR", "3.3.0.7239")]
+//[System.CodeDom.Compiler.GeneratedCode("ANTLR", "3.3.0.7239")]
 public partial class NCalcParser : Antlr.Runtime.Parser
 {
 	internal static readonly string[] tokenNames = new string[] {
