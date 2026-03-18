@@ -23,7 +23,7 @@ namespace NCalc
         public Expression(string expression, EvaluateOptions options)
         {
             if (String.IsNullOrEmpty(expression))
-                throw new 
+                throw new
                     ArgumentException("Expression can't be empty", "expression");
 
             OriginalExpression = expression;
@@ -52,8 +52,8 @@ namespace NCalc
         public static bool CacheEnabled
         {
             get { return _cacheEnabled; }
-            set 
-            { 
+            set
+            {
                 _cacheEnabled = value;
 
                 if (!CacheEnabled)
@@ -91,7 +91,7 @@ namespace NCalc
             }
             finally
             {
-                Rwl.ReleaseReaderLock();
+                Rwl.ReleaseWriterLock();
             }
         }
 
@@ -112,7 +112,7 @@ namespace NCalc
                         //Trace.TraceInformation("Expression retrieved from cache: " + expression);
                         var wr = _compiledExpressions[expression];
                         logicalExpression = wr.Target as LogicalExpression;
-                    
+
                         if (wr.IsAlive && logicalExpression != null)
                         {
                             return logicalExpression;
@@ -175,7 +175,7 @@ namespace NCalc
                 // In case HasErrors() is called multiple times for the same expression
                 return ParsedExpression != null && Error != null;
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 Error = e.Message;
                 return true;
@@ -191,84 +191,127 @@ namespace NCalc
 
         public object Evaluate()
         {
-            if (HasErrors())
+            if (!TryEvaluate(out var result, out var error))
             {
-                throw new EvaluationException(Error);
+                throw new EvaluationException(error);
             }
 
-            if (ParsedExpression == null)
+            return result;
+        }
+
+        public bool TryEvaluate(out object result, out string error)
+        {
+            result = null;
+            error = null;
+
+            try
             {
-                ParsedExpression = Compile(OriginalExpression, (Options & EvaluateOptions.NoCache) == EvaluateOptions.NoCache);
+                if (HasErrors())
+                {
+                    error = Error;
+                    return false;
+                }
+
+                if (ParsedExpression == null)
+                {
+                    ParsedExpression = Compile(OriginalExpression, (Options & EvaluateOptions.NoCache) == EvaluateOptions.NoCache);
+                }
+
+                var visitor = new EvaluationVisitor(Options);
+                visitor.EvaluateFunction += EvaluateFunction;
+                visitor.EvaluateParameter += EvaluateParameter;
+                visitor.Parameters = Parameters;
+
+                // if array evaluation, execute the same expression multiple times
+                if ((Options & EvaluateOptions.IterateParameters) == EvaluateOptions.IterateParameters)
+                {
+                    int size = -1;
+                    ParametersBackup = new Dictionary<string, object>();
+                    foreach (string key in Parameters.Keys)
+                    {
+                        ParametersBackup.Add(key, Parameters[key]);
+                    }
+
+                    ParameterEnumerators = new Dictionary<string, IEnumerator>();
+
+                    foreach (object parameter in Parameters.Values)
+                    {
+                        if (parameter is IEnumerable)
+                        {
+                            int localsize = 0;
+                            foreach (object o in (IEnumerable)parameter)
+                            {
+                                localsize++;
+                            }
+
+                            if (size == -1)
+                            {
+                                size = localsize;
+                            }
+                            else if (localsize != size)
+                            {
+                                error = "When IterateParameters option is used, IEnumerable parameters must have the same number of items";
+                                return false;
+                            }
+                        }
+                    }
+
+                    foreach (string key in Parameters.Keys)
+                    {
+                        var parameter = Parameters[key] as IEnumerable;
+                        if (parameter != null)
+                        {
+                            ParameterEnumerators.Add(key, parameter.GetEnumerator());
+                        }
+                    }
+
+                    var results = new List<object>();
+                    for (int i = 0; i < size; i++)
+                    {
+                        foreach (string key in ParameterEnumerators.Keys)
+                        {
+                            IEnumerator enumerator = ParameterEnumerators[key];
+                            enumerator.MoveNext();
+                            Parameters[key] = enumerator.Current;
+                        }
+
+                        ParsedExpression.Accept(visitor);
+                        results.Add(visitor.Result);
+                    }
+
+                    result = results;
+                    return true;
+                }
+
+                ParsedExpression.Accept(visitor);
+                result = visitor.Result;
+                return true;
             }
-
-
-            var visitor = new EvaluationVisitor(Options);
-            visitor.EvaluateFunction += EvaluateFunction;
-            visitor.EvaluateParameter += EvaluateParameter;
-            visitor.Parameters = Parameters;
-
-            // if array evaluation, execute the same expression multiple times
-            if ((Options & EvaluateOptions.IterateParameters) == EvaluateOptions.IterateParameters)
+            catch (EvaluationException ex)
             {
-                int size = -1;
-                ParametersBackup = new Dictionary<string, object>();
-                foreach (string key in Parameters.Keys)
-                {
-                    ParametersBackup.Add(key, Parameters[key]);
-                }
-
-                ParameterEnumerators = new Dictionary<string, IEnumerator>();
-
-                foreach (object parameter in Parameters.Values)
-                {
-                    if (parameter is IEnumerable)
-                    {
-                        int localsize = 0;
-                        foreach (object o in (IEnumerable)parameter)
-                        {
-                            localsize++;
-                        }
-
-                        if (size == -1)
-                        {
-                            size = localsize;
-                        }
-                        else if (localsize != size)
-                        {
-                            throw new EvaluationException("When IterateParameters option is used, IEnumerable parameters must have the same number of items");
-                        }
-                    }
-                }
-
-                foreach (string key in Parameters.Keys)
-                {
-                    var parameter = Parameters[key] as IEnumerable;
-                    if (parameter != null)
-                    {
-                        ParameterEnumerators.Add(key, parameter.GetEnumerator());
-                    }
-                }
-
-                var results = new List<object>();
-                for (int i = 0; i < size; i++)
-                {
-                    foreach (string key in ParameterEnumerators.Keys)
-                    {
-                        IEnumerator enumerator = ParameterEnumerators[key];
-                        enumerator.MoveNext();
-                        Parameters[key] = enumerator.Current;
-                    }
-
-                    ParsedExpression.Accept(visitor);
-                    results.Add(visitor.Result);
-                }
-
-                return results;
+                error = ex.Message;
+                return false;
             }
-
-            ParsedExpression.Accept(visitor);
-            return visitor.Result;
-            
+            catch (ArgumentException ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+            catch (InvalidOperationException ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+            catch (FormatException ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+            catch (OverflowException ex)
+            {
+                error = ex.Message;
+                return false;
+            }
         }
 
         public event EvaluateFunctionHandler EvaluateFunction;

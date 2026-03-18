@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 
 namespace NCalc
 {
@@ -6,9 +7,14 @@ namespace NCalc
     {
         private static object ConvertIfString(object s)
         {
-            if (s is String|| s is char)
+            if (s is String || s is char)
             {
-                return Decimal.Parse(s.ToString());
+                var text = s.ToString();
+                if (decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var invariant))
+                    return invariant;
+
+                if (decimal.TryParse(text, NumberStyles.Number, CultureInfo.CurrentCulture, out var current))
+                    return current;
             }
 
             return s;
@@ -1159,3 +1165,5 @@ namespace NCalc
 
     }
 }
+
+

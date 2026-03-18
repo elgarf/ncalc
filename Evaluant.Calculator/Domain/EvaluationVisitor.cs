@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace NCalc.Domain
 {
@@ -29,12 +30,12 @@ namespace NCalc.Domain
 
         public override void Visit(LogicalExpression expression)
         {
-            throw new Exception("The method or operation is not implemented.");
+            Result = null;
         }
 
         private static Type[] CommonTypes = new[] { typeof(Int64), typeof(Double), typeof(Boolean), typeof(String), typeof(Decimal) };
 
-    /// <summary>
+        /// <summary>
         /// Gets the the most precise type.
         /// </summary>
         /// <param name="a">Type a.</param>
@@ -66,8 +67,126 @@ namespace NCalc.Domain
             {
                 mpt = GetMostPreciseType(a.GetType(), b?.GetType());
             }
-            
-            return Comparer.Default.Compare(Convert.ChangeType(a, mpt), Convert.ChangeType(b, mpt));
+
+            if (TryConvertForComparison(a, mpt, out var convertedA) && TryConvertForComparison(b, mpt, out var convertedB))
+            {
+                return Comparer.Default.Compare(convertedA, convertedB);
+            }
+
+            return StringComparer.Ordinal.Compare(a?.ToString(), b?.ToString());
+        }
+
+        private static bool TryConvertForComparison(object value, Type target, out object converted)
+        {
+            converted = null;
+
+            if (value == null)
+            {
+                return true;
+            }
+
+            if (target == typeof(String))
+            {
+                converted = value.ToString();
+                return true;
+            }
+
+            if (target == typeof(Boolean))
+            {
+                if (value is bool vb)
+                {
+                    converted = vb;
+                    return true;
+                }
+
+                if (value is string sb && bool.TryParse(sb, out var parsedBool))
+                {
+                    converted = parsedBool;
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (target == typeof(Int64))
+            {
+                if (value is string si)
+                {
+                    if (long.TryParse(si, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        converted = parsed;
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                try
+                {
+                    converted = Convert.ToInt64(value, CultureInfo.InvariantCulture);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            if (target == typeof(Double))
+            {
+                if (value is string sd)
+                {
+                    if (double.TryParse(sd, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        converted = parsed;
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                try
+                {
+                    converted = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            if (target == typeof(Decimal))
+            {
+                if (value is string sm)
+                {
+                    if (decimal.TryParse(sm, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        converted = parsed;
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                try
+                {
+                    converted = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            if (target.IsInstanceOfType(value))
+            {
+                converted = value;
+                return true;
+            }
+
+            return false;
         }
 
         public override void Visit(TernaryExpression expression)
@@ -98,14 +217,14 @@ namespace NCalc.Domain
             // simulate Lazy<Func<>> behavior for late evaluation
             object leftValue = null;
             Func<object> left = () =>
-                                 {
-                                     if (leftValue == null)
-                                     {
-                                         expression.LeftExpression.Accept(this);
-                                         leftValue = Result;
-                                     }
-                                     return leftValue;
-                                 };
+            {
+                if (leftValue == null)
+                {
+                    expression.LeftExpression.Accept(this);
+                    leftValue = Result;
+                }
+                return leftValue;
+            };
 
             // simulate Lazy<Func<>> behavior for late evaluation
             object rightValue = null;
@@ -244,22 +363,22 @@ namespace NCalc.Domain
         public override void Visit(Function function)
         {
             var args = new FunctionArgs
-                           {
-                               Parameters = new Expression[function.Expressions.Length]
-                           };
+            {
+                Parameters = new Expression[function.Expressions.Length]
+            };
 
             // Don't call parameters right now, instead let the function do it as needed.
             // Some parameters shouldn't be called, for instance, in a if(), the "not" value might be a division by zero
             // Evaluating every value could produce unexpected behaviour
-            for (int i = 0; i < function.Expressions.Length; i++ )
+            for (int i = 0; i < function.Expressions.Length; i++)
             {
-                args.Parameters[i] =  new Expression(function.Expressions[i], _options);
+                args.Parameters[i] = new Expression(function.Expressions[i], _options);
                 args.Parameters[i].EvaluateFunction += EvaluateFunction;
                 args.Parameters[i].EvaluateParameter += EvaluateParameter;
 
                 // Assign the parameters of the Expression to the arguments so that custom Functions and Parameters can use them
                 args.Parameters[i].Parameters = Parameters;
-            }            
+            }
 
             // Calls external implementation
             OnEvaluateFunction(IgnoreCase ? function.Identifier.Name.ToLower() : function.Identifier.Name, args);
@@ -543,7 +662,7 @@ namespace NCalc.Domain
                     break;
 
                 #endregion
-                
+
                 #region Max
                 case "max":
 
@@ -620,20 +739,20 @@ namespace NCalc.Domain
                 #endregion
 
                 default:
-                    throw new ArgumentException("Function not found", 
+                    throw new ArgumentException("Function not found",
                         function.Identifier.Name);
             }
         }
 
         private void CheckCase(string function, string called)
         {
+            if (string.Equals(function, called, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             if (IgnoreCase)
             {
-                if (function.ToLower() == called.ToLower())
-                {
-                    return;
-                }
-
                 throw new ArgumentException("Function not found", called);
             }
 
@@ -684,7 +803,10 @@ namespace NCalc.Domain
                 OnEvaluateParameter(parameter.Name, args);
 
                 if (!args.HasResult)
-                    throw new ArgumentException("Parameter was not defined", parameter.Name);
+                {
+                    Result = parameter.Name;
+                    return;
+                }
 
                 Result = args.Result;
             }
@@ -702,3 +824,8 @@ namespace NCalc.Domain
 
     }
 }
+
+
+
+
+
