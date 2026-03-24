@@ -158,6 +158,74 @@ namespace NCalc
             return logicalExpression;
         }
 
+        public static bool TryCompile(string expression, bool nocache, out LogicalExpression result, out string errors)
+        {
+            LogicalExpression logicalExpression = null;
+
+            if (_cacheEnabled && !nocache)
+            {
+                try
+                {
+                    Rwl.AcquireReaderLock(Timeout.Infinite);
+
+                    if (_compiledExpressions.ContainsKey(expression))
+                    {
+                        //Trace.TraceInformation("Expression retrieved from cache: " + expression);
+                        var wr = _compiledExpressions[expression];
+                        logicalExpression = wr.Target as LogicalExpression;
+
+                        if (wr.IsAlive && logicalExpression != null)
+                        {
+                            result = logicalExpression;
+                            errors = string.Empty;
+                            return true;
+                        }
+                    }
+                }
+                finally
+                {
+                    Rwl.ReleaseReaderLock();
+                }
+            }
+
+            if (logicalExpression == null)
+            {
+                var lexer = new NCalcLexer(new ANTLRStringStream(expression));
+                var parser = new NCalcParser(new CommonTokenStream(lexer));
+
+                logicalExpression = parser.ncalcExpression().value;
+
+                if (parser.Errors != null && parser.Errors.Count > 0)
+                {
+                    //throw new EvaluationException(String.Join(Environment.NewLine, parser.Errors.ToArray()));
+                    result = null;
+                    errors = String.Join(Environment.NewLine, parser.Errors.ToArray());
+                    return false;
+                }
+
+                if (_cacheEnabled && !nocache)
+                {
+                    try
+                    {
+                        Rwl.AcquireWriterLock(Timeout.Infinite);
+                        _compiledExpressions[expression] = new WeakReference(logicalExpression);
+                    }
+                    finally
+                    {
+                        Rwl.ReleaseWriterLock();
+                    }
+
+                    CleanCache();
+
+                    //Trace.TraceInformation("Expression added to cache: " + expression);
+                }
+            }
+
+            result = logicalExpression;
+            errors = string.Empty;
+            return true;
+        }
+
         /// <summary>
         /// Pre-compiles the expression in order to check syntax errors.
         /// If errors are detected, the Error property contains the message.
@@ -169,7 +237,15 @@ namespace NCalc
             {
                 if (ParsedExpression == null)
                 {
-                    ParsedExpression = Compile(OriginalExpression, (Options & EvaluateOptions.NoCache) == EvaluateOptions.NoCache);
+                    LogicalExpression expression = null;
+                    string errors = null;
+                    if (!(TryCompile(OriginalExpression, (Options & EvaluateOptions.NoCache) == EvaluateOptions.NoCache, out expression, out errors)))
+                    {
+                        Error = errors;
+                        return true;
+                    }
+                    else
+                        ParsedExpression = expression;
                 }
 
                 // In case HasErrors() is called multiple times for the same expression

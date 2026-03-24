@@ -6,4 +6,5 @@ public partial class NCalcLexer
     {
         throw new EvaluationException(msg);
     }
+
 }
