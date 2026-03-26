@@ -3,6 +3,8 @@
 /Evaluant.Calculator.Play/obj
 /Evaluant.Calculator.Tests/bin
 /Evaluant.Calculator.Tests/obj
+/Evaluant.Calculator.CompatibilityTests/bin
+/Evaluant.Calculator.CompatibilityTests/obj
 /Evaluant.Calculator/bin
 /Evaluant.Calculator/obj
 /TestResults
